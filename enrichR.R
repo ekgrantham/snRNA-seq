@@ -1,11 +1,25 @@
 
-#Use Enrichr from R 
+setwd("/stor/scratch/WCAAR/emily_scratch/")
+outdir <- "/stor/home/eg33747/NTS_snRNA/"
 
+# Convenience functions
+SaveFigure <- function(plots, name, type = "png", width, height, res){
+  if(type == "png") {
+    png(paste0(outdir, name, ".", type),
+        width = width, height = height, units = "in", res = 200)
+  } else {
+    pdf(paste0(outdir, name, ".", type),
+        width = width, height = height)
+  }
+  print(plots)
+  dev.off()
+}
+
+#Use Enrichr for R 
 
 install.packages("enrichR")
+#install_github("wjawaid/enrichR") if the above doesn't work try this
 library(devtools)
-install_github("wjawaid/enrichR")
-install.packages("enrichR")
 library("enrichR")
 
 
@@ -66,79 +80,62 @@ plotenrichr <- function(df, title, barcolor) {
 
 #Now to use enrichr
 
-#Put together a list of libraries you'd like to look at - can just be one or two libraries for thesis, whatever you've been using in the web version of enrichr
+#Put together a list of libraries you'd like to look at
 #For example - Gene Ontology datasets, KEGG, WikiPathways, etc...
+#to see available databases, run the following:
+listEnrichrSites()
+setEnrichrSite("Enrichr") 
+websiteLive <- TRUE
+dbs <- listEnrichrDbs()
+if (is.null(dbs)) websiteLive <- FALSE
+if (websiteLive) head(dbs)
 
-libraries <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021", "KEGG_2021_Human", "CellMarker_Augmented_2021", "UK_Biobank_GWAS_v1", "PheWeb_2019", "BioPlanet_2019", "WikiPathways_2019_Mouse", "PanglaoDB_Augmented_2021")
+#select databases from the dbs table that you are interested in and set as libraries
 
-#Prepare a list of genes 
-#You should have upreg and downnreg lists already ready from your DESeq code, but in case you need to make those dataframes again:
- # upreg_FSS_0 <- subset(sig_FSS_vs_CNTL_0, sig_FSS_vs_CNTL_0$log2FoldChange > 0)
- # downreg_FSS_0 <- subset(sig_FSS_vs_CNTL_0, sig_FSS_vs_CNTL_0$log2FoldChange < 0)
-cluster_markers <- subset(nts_seur_markers, nts_seur_markers$cluster == "0")
+libraries <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021", 
+               "KEGG_2021_Human", "CellMarker_Augmented_2021", "UK_Biobank_GWAS_v1", "PheWeb_2019", 
+               "BioPlanet_2019", "WikiPathways_2019_Mouse", "PanglaoDB_Augmented_2021")
 
-#Gene list that will be entered into enrichr (just change out for every list and re-run the code after saving the results) 
+#generate gene list
+cluster_markers <- subset(markers, markers$cluster == "1")
 genelist <- cluster_markers$gene
 
-#function for putting enriched terms into dataframe
+#run enrichment
+enrichment <- enrichr(genes = genelist, databases = libraries)
+
+#make plots (I am usually just interested in cell-type and biol process for single cell but you can add as many plots as you want)
+ plotdata1 <- enrichrdf(enrichment$PanglaoDB_Augmented_2021, n=6, database = "GO")
+ plot1 <- plotenrichr(plotdata1, "Cell-type 1", "#adadad")
+ plotdata2 <- enrichrdf(enrichment$GO_Biological_Process_2021, n=6, database = "GO")
+ plot2 <- plotenrichr(plotdata2, "Biol Proc 1", "#adadad")
+ plot1 + plot2
+
+#function for putting enriched terms into dataframe that you can then export to excel
 if (getOption("enrichR.live")) {
-    enrichRLive <- TRUE
-    dbs <- listEnrichrDbs()
-    if(is.null(dbs)) enrichRLive <- FALSE
-    dbs <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021",
-              "GO_Biological_Process_2021", "PanglaoDB_Augmented_2021")
-     enriched <- enrichr(genelist, dbs)
-     if (enrichRLive) printEnrich(enriched)
+  enrichRLive <- TRUE
+  dbs <- listEnrichrDbs()
+  if(is.null(dbs)) enrichRLive <- FALSE
+  dbs <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021",
+           "GO_Biological_Process_2021", "PanglaoDB_Augmented_2021")
+  enriched <- enrichr(genelist, dbs)
+  if (enrichRLive) printEnrich(enriched)
 }
+write.csv(enriched$PanglaoDB_Augmented_2021, "/stor/home/eg33747/NTS_snRNA/cleaned_cluster_markers_soupX_harmony/cluster1_pangalao.csv")
 
-#Create enrichment object out of input gene list and selected enrichr libraries to query 
-enrichment <- enrichr(genes = genelist, databases = libraries)
+#plots that show # of genes in each term and use color to show p-value
+p1<- plotEnrich(enrichment$PanglaoDB_Augmented_2021,
+           showTerms = 20,
+           numChar = 40,
+           y = "Count",
+           orderBy = "P.value")
 
-#Use enrichrdf() and plotenrichr() to pull out top n terms from category of your choice by p-value, then plot in bar graph
-plotdata <- enrichrdf(enrichment$PanglaoDB_Augmented_2021, n=6, database = "GO")
-#If you don't want GO ID numbers to show on the plot, you can put:
-#enrichrdf(enrichment$GO_Biological_Process_2018, n=10, database = "GO")
-# There are similar options for KEGG ("KEGG"), Wikipathways ("wiki"), and reactome ("reactome") but I made them specifically for older versions so idk how it will fit with the updated libraries
-plotenrichr(plotdata, "Cell-type Cluster 25", "#adadad")
+p2<- plotEnrich(enrichment$GO_Biological_Process_2021,
+                showTerms = 20,
+                numChar = 40,
+                y = "Count",
+                orderBy = "P.value")
+p3<- p1+p2
 
-#Code for making tables (you can cut this shorter by only keeping the libraries you will use in the thesis)
-
-# X_BioPlanet <- if (websiteLive) enrichment[["BioPlanet_2019"]]
-# X_BiolProc <- if (websiteLive) enrichment[["GO_Biological_Process_2021"]]
-# X_MolFun <- if (websiteLive) enrichment[["GO_Molecular_Function_2021"]]
-# X_CellComp <- if (websiteLive) enrichment[["GO_Cellular_Component_2021"]]
-# X_KEGGhum <- if (websiteLive) enrichment[["KEGG_2021_Human"]]
-# X_WikiPaths <- if (websiteLive) enrichment[["WikiPathways_2019_Mouse"]]
-# X_CellMarker <- if (websiteLive) enrichment[["CellMarker_Augmented_2021"]]
-X_Panglao <- if (websiteLive) enrichment[["PanglaoDB_Augmented_2021"]]
-
-#save the table as a .csv to your home directory 
-# write.csv(X_BioPlanet, "/stor/home/eg33747/NTS_snRNA/cluster0_BioPlanet.csv")
-# write.csv(X_BiolProc, "/stor/home/eg33747/Becker_Tagseq_BNST/Time0/DEG_Enrichment/table_FSS_0_down_BiolProc.csv")
-# write.csv(X_MolFun, "/stor/home/eg33747/Becker_Tagseq_BNST/Time0/DEG_Enrichment/table_FSS_0_down_MolFun.csv")
-# write.csv(X_CellComp, "/stor/home/eg33747/Becker_Tagseq_BNST/Time0/DEG_Enrichment/table_FSS_0_down_CellComp.csv")
-# write.csv(X_KEGGhum, "/stor/home/eg33747/Becker_Tagseq_BNST/Time0/DEG_Enrichment/table_FSS_0_down_KEGGhum.csv")
-# write.csv(X_WikiPaths, "/stor/home/eg33747/Becker_Tagseq_BNST/Time0/DEG_Enrichment/table_FSS_0_down_WikiPaths.csv")
-
-#generate gene list according to specific cluster
-cluster_markers <- subset(cleaned_markers, cleaned_markers$cluster == "Chond")
-genelist <- cluster_markers$gene
-enrichment <- enrichr(genes = genelist, databases = libraries)
-#write.csv(enrichment$PanglaoDB_Augmented_2021, "/stor/home/eg33747/NTS_snRNA/cleaned_cluster_markers_soupX_harmony/cluster22_pangalao.csv")
-plotdata <- enrichrdf(enrichment$PanglaoDB_Augmented_2021, n=6, database = "GO")
-plotenrichr(plotdata, "Cell-type Chond", "#adadad")
-plotdata <- enrichrdf(enrichment$GO_Biological_Process_2021, n=6, database = "GO")
-plotenrichr(plotdata, "Biol Proc Chond", "#adadad")
-
-new.cluster.ids <- c( "Neu1",	"Neu2",	"Soup1",	"Neu3", "Oligo1", "Ast1", "Oligo2", "Soup2", "Endo1", "Ast2", "Inter1", "Endo2", "Inter2", "OPCs", "MG", "Pod", "Oligo3", "Epend", "Soup3", "Inter3", "Chond", "Neu4", "Neu5")
-old.cluster.ids <- c( "0",	"1",	"2",	"3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22")
-names(new.cluster.ids) <- levels(x_cleaned_all)
-x_cleaned_all <- RenameIdents(x_cleaned_all, new.cluster.ids)
-
-#ffab61 CIE
-#78ffd0 CIE FSS
-#c6aefc FSS
-
-
+SaveFigure(p3, "cluster1", width = 16, height = 4)
 
 
